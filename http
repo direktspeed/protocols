@@ -1,0 +1,30 @@
+const textDecoder = new TextDecoder('utf8');
+const Pushable = () => new ReadableStream({start(p){ this.push = (data) => p.enqueue(data); }});
+const listen = new TransformStream({ async transform(data,socket) => {
+    const [requestHeader, ...bodyContent] = textDecoder.decode(
+    data).split('\r\n\r\n');
+
+    const [firstLine, ...otherLines] = requestHeader.split('\n');
+    const [method, input, _httpVersion] = firstLine.trim().split(' ');
+    const headers = Object.fromEntries(
+    otherLines.filter(isUndefined=>isUndefined).map(
+    line=>line.split(':').map(
+    part=>part.trim())).map(
+    ([name, ...rest]) => [name, rest.join(' ')]));
+
+    const request = new Request(input,{ method,headers,body });
+    console.log(request);
+    
+    socket.enqueue(`HTTP/1.1 200 OK\n\nhallo ${request.body.name}`);
+};
+
+
+const server = net.createServer(
+(socket) => {
+ const pushable = Pushable().pipeThrough(
+ listen).pipeTo(
+ new WritableStream({
+ write(response){ socket.write(response); socket.end(console.error); }
+ }));
+ socket.on('data',pushable.push);
+});
